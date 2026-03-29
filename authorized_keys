@@ -1,0 +1,16 @@
+# =============================================================================
+# Chaves públicas SSH - Todos os dispositivos autorizados
+# =============================================================================
+# Cole aqui a chave pública de cada dispositivo (conteúdo do ~/.ssh/id_ed25519.pub)
+# Uma chave por linha. Linhas com # são ignoradas.
+#
+# Para pegar a chave pública de um dispositivo:
+#   cat ~/.ssh/id_ed25519.pub
+#
+# Se ainda não tem chave nesse dispositivo, gere com:
+#   ssh-keygen -t ed25519 -C "descricao-do-dispositivo"
+# =============================================================================
+
+# authorized_keys.example — Modelo, substitua pelas suas chaves reais
+ssh-ed25519 AAAA_SUA_CHAVE_AQUI usuario@maquina
+ssh-ed25519 AAAA_OUTRA_CHAVE_AQUI usuario@outra-maquina

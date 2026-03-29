@@ -1,0 +1,11 @@
+# Nunca subir dados sensíveis
+.env
+*.key
+*.pem
+id_rsa*
+*.log
+
+# Lixo de sistema
+.DS_Store
+Thumbs.db
+*~
