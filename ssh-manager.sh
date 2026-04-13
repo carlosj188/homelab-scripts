@@ -3,6 +3,10 @@
 # SSH Key Deploy - Distribuidor de chaves públicas para múltiplos servidores
 # Uso: ./deploy.sh [--hardening]
 #   --hardening  Também desabilita login por senha nos servidores
+#
+# Formato do array SERVERS:
+#   "usuario@ip"           → porta 22 (padrão)
+#   "usuario@ip:porta"     → porta customizada
 # =============================================================================
 
 set -uo pipefail
@@ -18,9 +22,10 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # --- Lista de servidores ---
-# Formato: usuario@ip ou usuario@hostname
+# Formato: "usuario@ip" ou "usuario@ip:porta"
 SERVERS=(
-    #"root@192.XXX.X.XX"     # SERVER 1
+    #"root@192.XXX.X.XX"        # SERVER 1 - porta 22 (padrão)
+    #"root@192.XXX.X.XX:2222"   # SERVER 2 - porta customizada
 )
 
 # --- Funções ---
@@ -37,6 +42,10 @@ show_help() {
     echo "  --list         Lista os servidores configurados"
     echo "  --help         Mostra esta ajuda"
     echo ""
+    echo "Formato dos servidores no array SERVERS:"
+    echo '  "usuario@ip"           → usa porta 22 (padrão)'
+    echo '  "usuario@ip:porta"     → usa porta customizada'
+    echo ""
     echo "Antes de rodar, edite o arquivo 'authorized_keys' com as chaves"
     echo "públicas de todos os seus dispositivos."
 }
@@ -45,10 +54,27 @@ list_servers() {
     echo "Servidores configurados:"
     echo ""
     for server in "${SERVERS[@]}"; do
-        # Ignora linhas comentadas
         [[ "$server" =~ ^# ]] && continue
-        echo "  - $server"
+        local hostport="${server##*@}"
+        local port="22"
+        [[ "$hostport" == *:* ]] && port="${hostport##*:}"
+        echo "  - $server  (porta $port)"
     done
+}
+
+# --- Extrai user, host e porta de "user@host" ou "user@host:porta" ---
+parse_server() {
+    local entry="$1"
+    SERVER_USER="${entry%%@*}"
+    local hostport="${entry##*@}"
+    if [[ "$hostport" == *:* ]]; then
+        SERVER_HOST="${hostport%%:*}"
+        SERVER_PORT="${hostport##*:}"
+    else
+        SERVER_HOST="$hostport"
+        SERVER_PORT="22"
+    fi
+    SERVER_TARGET="${SERVER_USER}@${SERVER_HOST}"
 }
 
 check_keys_file() {
@@ -62,7 +88,6 @@ check_keys_file() {
         exit 1
     fi
 
-    # Conta chaves válidas (ignora linhas vazias e comentários)
     local key_count
     key_count=$(grep -cE '^ssh-(ed25519|rsa|ecdsa)' "$KEYS_FILE" 2>/dev/null || echo 0)
 
@@ -76,13 +101,13 @@ check_keys_file() {
 }
 
 deploy_keys() {
-    local server="$1"
-    local user="${server%%@*}"
-    local host="${server##*@}"
+    local entry="$1"
+    parse_server "$entry"
+    local user="$SERVER_USER"
+    local SSH_OPTS="-p $SERVER_PORT"
     local ssh_dir
     local remote_auth_keys
 
-    # Define o caminho correto do .ssh baseado no usuário
     if [[ "$user" == "root" ]]; then
         ssh_dir="/root/.ssh"
     else
@@ -91,38 +116,36 @@ deploy_keys() {
     remote_auth_keys="$ssh_dir/authorized_keys"
 
     # Testa conectividade (timeout de 5 segundos)
-    if ! ssh -o ConnectTimeout=5 -o BatchMode=yes "$server" "echo ok" &>/dev/null; then
-        log_fail "$server - Sem acesso SSH (offline ou sem chave configurada)"
+    if ! ssh $SSH_OPTS -o ConnectTimeout=5 -o BatchMode=yes "$SERVER_TARGET" "echo ok" &>/dev/null; then
+        log_fail "$entry - Sem acesso SSH (offline ou sem chave configurada)"
         return 1
     fi
 
     # Garante que o diretório .ssh existe com permissões corretas
-    ssh "$server" "mkdir -p $ssh_dir && chmod 700 $ssh_dir"
+    ssh $SSH_OPTS "$SERVER_TARGET" "mkdir -p $ssh_dir && chmod 700 $ssh_dir"
 
     # Copia as chaves
-    scp -q "$KEYS_FILE" "$server:$remote_auth_keys"
+    scp -q -P "$SERVER_PORT" "$KEYS_FILE" "$SERVER_TARGET:$remote_auth_keys"
 
     # Ajusta permissões
-    ssh "$server" "chmod 600 $remote_auth_keys && chown $user:$user $remote_auth_keys 2>/dev/null; chown ${user}:${user} $ssh_dir 2>/dev/null"
+    ssh $SSH_OPTS "$SERVER_TARGET" "chmod 600 $remote_auth_keys && chown $user:$user $remote_auth_keys 2>/dev/null; chown ${user}:${user} $ssh_dir 2>/dev/null"
 
-    log_ok "$server - Chaves atualizadas"
+    log_ok "$entry - Chaves atualizadas"
     return 0
 }
 
 apply_hardening() {
-    local server="$1"
-    local user="${server%%@*}"
+    local entry="$1"
+    parse_server "$entry"
+    local user="$SERVER_USER"
+    local SSH_OPTS="-p $SERVER_PORT"
     local sshd_config="/etc/ssh/sshd_config"
     local cloud_init_conf="/etc/ssh/sshd_config.d/50-cloud-init.conf"
 
-    # Define se precisa de sudo (usuário não-root)
     local SUDO=""
-    if [[ "$user" != "root" ]]; then
-        SUDO="sudo"
-    fi
+    [[ "$user" != "root" ]] && SUDO="sudo"
 
-    # Aplica hardening no sshd_config principal
-    ssh "$server" "
+    ssh $SSH_OPTS "$SERVER_TARGET" "
         $SUDO cp $sshd_config ${sshd_config}.bak.\$(date +%Y%m%d%H%M%S)
 
         apply_setting() {
@@ -141,25 +164,23 @@ apply_hardening() {
         apply_setting KbdInteractiveAuthentication no
         apply_setting PermitRootLogin prohibit-password
 
-        # Corrige cloud-init se existir (sobrescreve configs do sshd_config)
         if [[ -f $cloud_init_conf ]]; then
             $SUDO sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' $cloud_init_conf
         fi
     "
 
     # Testa a config antes de restartar
-    if ssh "$server" "$SUDO sshd -t" 2>/dev/null; then
-        ssh "$server" "$SUDO systemctl restart sshd 2>/dev/null || $SUDO systemctl restart ssh 2>/dev/null"
-        log_ok "$server - Hardening aplicado e SSH reiniciado"
+    if ssh $SSH_OPTS "$SERVER_TARGET" "$SUDO sshd -t" 2>/dev/null; then
+        ssh $SSH_OPTS "$SERVER_TARGET" "$SUDO systemctl restart sshd 2>/dev/null || $SUDO systemctl restart ssh 2>/dev/null"
+        log_ok "$entry - Hardening aplicado e SSH reiniciado"
     else
-        # Se deu erro, restaura o backup
-        ssh "$server" "
+        ssh $SSH_OPTS "$SERVER_TARGET" "
             latest_bak=\$($SUDO ls -t ${sshd_config}.bak.* 2>/dev/null | head -1)
             if [[ -n \"\$latest_bak\" ]]; then
                 $SUDO cp \"\$latest_bak\" $sshd_config
             fi
         "
-        log_fail "$server - Erro na config do SSH, restaurado backup"
+        log_fail "$entry - Erro na config do SSH, backup restaurado"
         return 1
     fi
 }
@@ -201,7 +222,10 @@ if [[ "$DRY_RUN" == true ]]; then
     echo "[DRY-RUN] Servidores que seriam atualizados:"
     for server in "${SERVERS[@]}"; do
         [[ "$server" =~ ^# ]] && continue
-        echo "  - $server"
+        local hostport="${server##*@}"
+        local port="22"
+        [[ "$hostport" == *:* ]] && port="${hostport##*:}"
+        echo "  - $server  (porta $port)"
     done
     echo ""
     echo "[DRY-RUN] Chaves que seriam copiadas:"
@@ -215,7 +239,6 @@ fail=0
 echo "Distribuindo chaves..."
 echo ""
 for server in "${SERVERS[@]}"; do
-    # Ignora linhas comentadas
     [[ "$server" =~ ^# ]] && continue
 
     if deploy_keys "$server"; then
