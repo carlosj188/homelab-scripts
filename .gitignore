@@ -10,3 +10,11 @@ id_rsa*
 Thumbs.db
 *~
 CLAUDE.md
+
+# wpp-auto
+wpp-auto/scripts/*.local.sh
+wpp-auto/backups/
+
+# Claude/LLM sessions (podem conter histórico com dados sensíveis)
+.claude/
+.openclaude-profile.json
