@@ -221,7 +221,7 @@ curl -X POST 'http://localhost:8080/webhook/set/powerup-main' \
 
 **2. Reativar integração Typebot:**
 ```bash
-curl -X PUT 'http://localhost:8080/typebot/update/cmnwce6j800h7p54jk8hazju2/powerup-main' \
+curl -X PUT 'http://localhost:8080/typebot/update/<TYPEBOT_BINDING_ID>/powerup-main' \
   -H 'apikey: EVOLUTION_API_KEY' \
   -H 'Content-Type: application/json' \
   -d '{

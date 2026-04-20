@@ -83,7 +83,7 @@ A Evolution API tem uma integração direta com Typebot (`/typebot/set`). Foi **
 
 ```bash
 curl -X PUT \
-  'http://localhost:8080/typebot/update/cmnwce6j800h7p54jk8hazju2/powerup-main' \
+  'http://localhost:8080/typebot/update/<TYPEBOT_BINDING_ID>/powerup-main' \
   -H 'apikey: SUA_EVOLUTION_API_KEY' \
   -H 'Content-Type: application/json' \
   -d '{"enabled": true, ...todos os campos originais...}'
@@ -114,9 +114,9 @@ No n8n tem 3 credenciais configuradas (Personal project):
 | `Evolution account` | Evolution API (community node) | Server URL `http://evolution-api:8080`, API key |
 
 IDs das credenciais (usados nos JSONs dos workflows):
-- Redis: `YEun9v2RmIsI97HG`
-- Postgres: `ED6cdHtL5HTFU4o8`
-- Evolution: `2VodQgJvFM7OlLpa`
+- Redis: `<REDIS_CRED_ID>`
+- Postgres: `<POSTGRES_CRED_ID>`
+- Evolution: `<EVOLUTION_CRED_ID>`
 
 ## Por que três camadas?
 

@@ -189,7 +189,7 @@ Troca pelo próprio painel da Evolution ou regenera via variável de ambiente + 
 
 **2. Remover da Evolution:**
 ```bash
-curl -X DELETE 'http://localhost:8080/typebot/delete/cmnwce6j800h7p54jk8hazju2/powerup-main' \
+curl -X DELETE 'http://localhost:8080/typebot/delete/<TYPEBOT_BINDING_ID>/powerup-main' \
   -H 'apikey: EVOLUTION_API_KEY'
 ```
 
