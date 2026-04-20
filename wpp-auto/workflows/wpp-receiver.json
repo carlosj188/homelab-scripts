@@ -1,0 +1,412 @@
+{
+  "name": "wpp-receiver",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wpp-evolution-receive",
+        "options": {}
+      },
+      "id": "b0000001-0000-0000-0000-000000000001",
+      "name": "Webhook Evolution",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 400],
+      "webhookId": "wpp-evolution-receive"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.body.event }}",
+              "rightValue": "messages.upsert",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b0000001-0000-0000-0000-000000000002",
+      "name": "É messages.upsert?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [420, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "n1",
+              "name": "message_id",
+              "value": "={{ $json.body.data.key.id }}",
+              "type": "string"
+            },
+            {
+              "id": "n2",
+              "name": "fromMe",
+              "value": "={{ $json.body.data.key.fromMe }}",
+              "type": "boolean"
+            },
+            {
+              "id": "n3",
+              "name": "remoteJid",
+              "value": "={{ $json.body.data.key.remoteJid }}",
+              "type": "string"
+            },
+            {
+              "id": "n4",
+              "name": "contact_number",
+              "value": "={{ $json.body.data.key.remoteJid.split('@')[0] }}",
+              "type": "string"
+            },
+            {
+              "id": "n5",
+              "name": "content",
+              "value": "={{ $json.body.data.message?.conversation || $json.body.data.message?.extendedTextMessage?.text || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "n6",
+              "name": "instance",
+              "value": "={{ $json.body.instance }}",
+              "type": "string"
+            },
+            {
+              "id": "n7",
+              "name": "raw_payload",
+              "value": "={{ $json.body }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b0000001-0000-0000-0000-000000000003",
+      "name": "Normalizar campos",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [640, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.fromMe }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b0000001-0000-0000-0000-000000000004",
+      "name": "fromMe = true?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [860, 400]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "=bot:sent_msg:{{ $json.message_id }}",
+        "keyType": "string",
+        "options": {}
+      },
+      "id": "b0000001-0000-0000-0000-000000000005",
+      "name": "Redis: foi o bot?",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1080, 240],
+      "credentials": {
+        "redis": {
+          "id": "YEun9v2RmIsI97HG",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c3",
+              "leftValue": "={{ $json.propertyName }}",
+              "rightValue": "1",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b0000001-0000-0000-0000-000000000006",
+      "name": "Eco do bot?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1300, 240]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=bot:paused:{{ $('Normalizar campos').item.json.contact_number }}",
+        "value": "1",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 86400
+      },
+      "id": "b0000001-0000-0000-0000-000000000007",
+      "name": "Redis: pausar bot 24h",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1520, 340],
+      "credentials": {
+        "redis": {
+          "id": "YEun9v2RmIsI97HG",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {"__rl": true, "mode": "list", "value": "public"},
+        "table": {"__rl": true, "mode": "list", "value": "wpp_handoff_log"},
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "contact_number": "={{ $('Normalizar campos').item.json.contact_number }}",
+            "action": "pause",
+            "triggered_by": "human_message",
+            "ttl_seconds": 86400
+          },
+          "matchingColumns": [],
+          "schema": [
+            {"id": "contact_number", "displayName": "contact_number", "type": "string"},
+            {"id": "action", "displayName": "action", "type": "string"},
+            {"id": "triggered_by", "displayName": "triggered_by", "type": "string"},
+            {"id": "ttl_seconds", "displayName": "ttl_seconds", "type": "number"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "b0000001-0000-0000-0000-000000000008",
+      "name": "Postgres: log handoff",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1740, 340],
+      "credentials": {
+        "postgres": {
+          "id": "ED6cdHtL5HTFU4o8",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {"__rl": true, "mode": "list", "value": "public"},
+        "table": {"__rl": true, "mode": "list", "value": "wpp_messages"},
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "message_id": "={{ $('Normalizar campos').item.json.message_id }}",
+            "contact_number": "={{ $('Normalizar campos').item.json.contact_number }}",
+            "direction": "out_human",
+            "content": "={{ $('Normalizar campos').item.json.content }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {"id": "message_id", "displayName": "message_id", "type": "string"},
+            {"id": "contact_number", "displayName": "contact_number", "type": "string"},
+            {"id": "direction", "displayName": "direction", "type": "string"},
+            {"id": "content", "displayName": "content", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "b0000001-0000-0000-0000-000000000009",
+      "name": "Postgres: log msg humana",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1960, 340],
+      "credentials": {
+        "postgres": {
+          "id": "ED6cdHtL5HTFU4o8",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "=bot:paused:{{ $json.contact_number }}",
+        "keyType": "string",
+        "options": {}
+      },
+      "id": "b0000001-0000-0000-0000-000000000010",
+      "name": "Redis: bot pausado?",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1080, 560],
+      "credentials": {
+        "redis": {
+          "id": "YEun9v2RmIsI97HG",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c4",
+              "leftValue": "={{ $json.propertyName }}",
+              "rightValue": "1",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b0000001-0000-0000-0000-000000000011",
+      "name": "Está pausado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1300, 560]
+    },
+    {
+      "parameters": {
+        "schema": {"__rl": true, "mode": "list", "value": "public"},
+        "table": {"__rl": true, "mode": "list", "value": "wpp_messages"},
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "message_id": "={{ $('Normalizar campos').item.json.message_id }}",
+            "contact_number": "={{ $('Normalizar campos').item.json.contact_number }}",
+            "direction": "in",
+            "content": "={{ $('Normalizar campos').item.json.content }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {"id": "message_id", "displayName": "message_id", "type": "string"},
+            {"id": "contact_number", "displayName": "contact_number", "type": "string"},
+            {"id": "direction", "displayName": "direction", "type": "string"},
+            {"id": "content", "displayName": "content", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "b0000001-0000-0000-0000-000000000012",
+      "name": "Postgres: log msg recebida",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1520, 680],
+      "credentials": {
+        "postgres": {
+          "id": "ED6cdHtL5HTFU4o8",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## wpp-receiver\n\n**Função:** ponto de entrada do webhook da Evolution API.\n\n**Decisões:**\n1. É mensagem (`messages.upsert`)? Se não, ignora.\n2. `fromMe` é true ou false?\n   - **TRUE:** é o próprio número enviando.\n     - Se tem marca no Redis `bot:sent_msg:{id}` → foi o bot, ignora.\n     - Senão → é você escrevendo manualmente → pausa bot por 24h.\n   - **FALSE:** é cliente enviando.\n     - Se tem marca `bot:paused:{numero}` → ignora (você está atendendo).\n     - Senão → loga e chama `wpp-bot-engine`.\n\n**TTL:** pausa dura 24h. Pra reativar antes, deletar chave `bot:paused:{numero}` no Redis.",
+        "height": 340,
+        "width": 380,
+        "color": 6
+      },
+      "id": "b0000001-0000-0000-0000-000000000013",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [200, 60]
+    }
+  ],
+  "connections": {
+    "Webhook Evolution": {
+      "main": [[{"node": "É messages.upsert?", "type": "main", "index": 0}]]
+    },
+    "É messages.upsert?": {
+      "main": [
+        [{"node": "Normalizar campos", "type": "main", "index": 0}],
+        []
+      ]
+    },
+    "Normalizar campos": {
+      "main": [[{"node": "fromMe = true?", "type": "main", "index": 0}]]
+    },
+    "fromMe = true?": {
+      "main": [
+        [{"node": "Redis: foi o bot?", "type": "main", "index": 0}],
+        [{"node": "Redis: bot pausado?", "type": "main", "index": 0}]
+      ]
+    },
+    "Redis: foi o bot?": {
+      "main": [[{"node": "Eco do bot?", "type": "main", "index": 0}]]
+    },
+    "Eco do bot?": {
+      "main": [
+        [],
+        [{"node": "Redis: pausar bot 24h", "type": "main", "index": 0}]
+      ]
+    },
+    "Redis: pausar bot 24h": {
+      "main": [[{"node": "Postgres: log handoff", "type": "main", "index": 0}]]
+    },
+    "Postgres: log handoff": {
+      "main": [[{"node": "Postgres: log msg humana", "type": "main", "index": 0}]]
+    },
+    "Redis: bot pausado?": {
+      "main": [[{"node": "Está pausado?", "type": "main", "index": 0}]]
+    },
+    "Está pausado?": {
+      "main": [
+        [],
+        [{"node": "Postgres: log msg recebida", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

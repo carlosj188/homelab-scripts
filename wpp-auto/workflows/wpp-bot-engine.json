@@ -1,0 +1,277 @@
+{
+  "name": "wpp-bot-engine",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## wpp-bot-engine\n\n**Função:** motor conversacional. Chamado pelo `wpp-receiver` quando:\n- `fromMe=false` (cliente mandou)\n- Bot NÃO está pausado\n\n**Máquina de estados (Redis `bot:state:{numero}`):**\n- sem estado → envia menu, seta `step=menu`\n- `step=menu` + dígito → envia prompt do ramo, seta step correspondente\n- `step=menu` + outro → msg de erro, mantém `step=menu`\n- `step=aguardando_*` → envia encaminhamento, PAUSA BOT 24h, limpa estado\n\n**TTL estado:** 1h (se cliente ficar 1h sem responder, volta do zero)\n**TTL pausa:** 24h\n\n**Decisão centralizada:** o node \"Decidir resposta\" (JavaScript) retorna `{mensagem, novo_estado, pausar_bot}`. Para alterar o fluxo, basta editar essa função.",
+        "height": 340,
+        "width": 400,
+        "color": 6
+      },
+      "id": "c0000001-0000-0000-0000-000000000001",
+      "name": "Sticky Note - Docs",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [200, 40]
+    },
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"contact_number\": \"5566912345678\",\n  \"content\": \"oi\",\n  \"message_id\": \"TESTE_ID_001\",\n  \"instance\": \"powerup-main\"\n}"
+      },
+      "id": "c0000001-0000-0000-0000-000000000002",
+      "name": "Quando chamado pelo receiver",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 440]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "=bot:state:{{ $json.contact_number }}",
+        "keyType": "string",
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000003",
+      "name": "Redis: ler estado",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [460, 440],
+      "credentials": {
+        "redis": {
+          "id": "YEun9v2RmIsI97HG",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Engine de decisão do bot\n// Recebe: estado atual (Redis) + input do cliente\n// Retorna: { mensagem, novo_estado, pausar_bot, ttl_estado }\n\nconst contact = $('Quando chamado pelo receiver').item.json;\nconst contactNumber = contact.contact_number;\nconst contentRaw = (contact.content || '').toString();\nconst instance = contact.instance || 'powerup-main';\n\n// Normaliza entrada pra detectar dígito isolado\n// Aceita: \"1\", \" 1 \", \"1.\", \"1)\", etc.\nconst normalized = contentRaw.trim().replace(/[.)\\s]/g, '');\nconst isDigit = /^[0-3]$/.test(normalized);\nconst digit = isDigit ? normalized : null;\n\n// Lê estado do Redis (vem no campo propertyName quando existe)\nconst redisResult = $json.propertyName;\nlet currentStep = null;\nif (redisResult && redisResult !== null && redisResult !== '') {\n  try {\n    const parsed = typeof redisResult === 'string' ? JSON.parse(redisResult) : redisResult;\n    currentStep = parsed.step || null;\n  } catch (e) {\n    currentStep = null;\n  }\n}\n\n// Mensagens do fluxo\nconst MSG_MENU = `👋 Olá! Você entrou em contato com a *PowerUP Informática*.\\n\\nEstamos prontos para te atender. Escolha uma das opções:\\n\\n*1* - Suporte Técnico\\n*2* - Financeiro\\n*3* - Vendas\\n*0* - Atendimento humano\\n\\nDigite o número correspondente para continuar.`;\n\nconst MSG_INVALIDO = `Hmm, recebi sua mensagem 👍\\nPra te direcionar melhor, digite só o número da opção:\\n\\n*1* - Suporte Técnico\\n*2* - Financeiro\\n*3* - Vendas\\n*0* - Falar com atendente`;\n\nconst MSG_TECNICO_PEDIR = `🔧 Conectando ao suporte técnico.\\n\\nDescreva o problema que um técnico vai te atender em instantes.`;\nconst MSG_FINANCEIRO_PEDIR = `💰 Para questões financeiras, envie seu *CPF ou CNPJ*.`;\nconst MSG_VENDAS_PEDIR = `🛒 Nossa equipe comercial já está te atendendo.\\n\\nQual produto te interessa?`;\nconst MSG_HUMANO_PEDIR = `👤 Descreva o problema pra adiantar o chamado.`;\n\nconst MSG_TECNICO_FINAL = `✅ Passando para o Técnico, aguarde.`;\nconst MSG_FINANCEIRO_FINAL = `✅ Aguarde o setor financeiro.`;\nconst MSG_VENDAS_FINAL = `✅ Passando para o setor de vendas, aguarde.`;\nconst MSG_HUMANO_FINAL = `✅ Passando para um atendente humano. Aguarde!!`;\n\nlet response = {};\n\nif (currentStep === null) {\n  // Sem estado ativo → envia menu\n  response = {\n    mensagem: MSG_MENU,\n    novo_estado: { step: 'menu', set_at: new Date().toISOString() },\n    pausar_bot: false,\n    ttl_estado: 3600\n  };\n} else if (currentStep === 'menu') {\n  if (digit === '1') {\n    response = {\n      mensagem: MSG_TECNICO_PEDIR,\n      novo_estado: { step: 'aguardando_problema_tecnico', set_at: new Date().toISOString() },\n      pausar_bot: false,\n      ttl_estado: 3600\n    };\n  } else if (digit === '2') {\n    response = {\n      mensagem: MSG_FINANCEIRO_PEDIR,\n      novo_estado: { step: 'aguardando_doc', set_at: new Date().toISOString() },\n      pausar_bot: false,\n      ttl_estado: 3600\n    };\n  } else if (digit === '3') {\n    response = {\n      mensagem: MSG_VENDAS_PEDIR,\n      novo_estado: { step: 'aguardando_produto', set_at: new Date().toISOString() },\n      pausar_bot: false,\n      ttl_estado: 3600\n    };\n  } else if (digit === '0') {\n    response = {\n      mensagem: MSG_HUMANO_PEDIR,\n      novo_estado: { step: 'aguardando_problema_humano', set_at: new Date().toISOString() },\n      pausar_bot: false,\n      ttl_estado: 3600\n    };\n  } else {\n    response = {\n      mensagem: MSG_INVALIDO,\n      novo_estado: { step: 'menu', set_at: new Date().toISOString() },\n      pausar_bot: false,\n      ttl_estado: 3600\n    };\n  }\n} else if (currentStep === 'aguardando_problema_tecnico') {\n  response = {\n    mensagem: MSG_TECNICO_FINAL,\n    novo_estado: null,\n    pausar_bot: true,\n    ttl_estado: 0\n  };\n} else if (currentStep === 'aguardando_doc') {\n  response = {\n    mensagem: MSG_FINANCEIRO_FINAL,\n    novo_estado: null,\n    pausar_bot: true,\n    ttl_estado: 0\n  };\n} else if (currentStep === 'aguardando_produto') {\n  response = {\n    mensagem: MSG_VENDAS_FINAL,\n    novo_estado: null,\n    pausar_bot: true,\n    ttl_estado: 0\n  };\n} else if (currentStep === 'aguardando_problema_humano') {\n  response = {\n    mensagem: MSG_HUMANO_FINAL,\n    novo_estado: null,\n    pausar_bot: true,\n    ttl_estado: 0\n  };\n} else {\n  // Estado desconhecido, reseta\n  response = {\n    mensagem: MSG_MENU,\n    novo_estado: { step: 'menu', set_at: new Date().toISOString() },\n    pausar_bot: false,\n    ttl_estado: 3600\n  };\n}\n\nreturn [{\n  json: {\n    contact_number: contactNumber,\n    instance: instance,\n    mensagem: response.mensagem,\n    novo_estado: response.novo_estado,\n    novo_estado_json: response.novo_estado ? JSON.stringify(response.novo_estado) : null,\n    pausar_bot: response.pausar_bot,\n    ttl_estado: response.ttl_estado,\n    step_anterior: currentStep || 'null'\n  }\n}];\n"
+      },
+      "id": "c0000001-0000-0000-0000-000000000004",
+      "name": "Decidir resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 440]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "5Ycpgcinse4QWafT",
+          "mode": "list",
+          "cachedResultName": "wpp-sender"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "numero": "={{ $json.contact_number }}",
+            "mensagem": "={{ $json.mensagem }}",
+            "instancia": "={{ $json.instance }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {"id": "numero", "displayName": "numero", "type": "string"},
+            {"id": "mensagem", "displayName": "mensagem", "type": "string"},
+            {"id": "instancia", "displayName": "instancia", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000005",
+      "name": "Enviar mensagem (chama wpp-sender)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [900, 440]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "d1",
+              "leftValue": "={{ $('Decidir resposta').item.json.novo_estado_json }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000006",
+      "name": "Tem novo estado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 440]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=bot:state:{{ $('Decidir resposta').item.json.contact_number }}",
+        "value": "={{ $('Decidir resposta').item.json.novo_estado_json }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": "={{ $('Decidir resposta').item.json.ttl_estado }}"
+      },
+      "id": "c0000001-0000-0000-0000-000000000007",
+      "name": "Redis: salvar estado",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1340, 300],
+      "credentials": {
+        "redis": {
+          "id": "YEun9v2RmIsI97HG",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "=bot:state:{{ $('Decidir resposta').item.json.contact_number }}",
+        "keyType": "string"
+      },
+      "id": "c0000001-0000-0000-0000-000000000008",
+      "name": "Redis: limpar estado",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1340, 580],
+      "credentials": {
+        "redis": {
+          "id": "YEun9v2RmIsI97HG",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "d2",
+              "leftValue": "={{ $('Decidir resposta').item.json.pausar_bot }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000009",
+      "name": "Deve pausar bot?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 580]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=bot:paused:{{ $('Decidir resposta').item.json.contact_number }}",
+        "value": "1",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 86400
+      },
+      "id": "c0000001-0000-0000-0000-000000000010",
+      "name": "Redis: pausar bot 24h",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1780, 500],
+      "credentials": {
+        "redis": {
+          "id": "YEun9v2RmIsI97HG",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {"__rl": true, "mode": "list", "value": "public"},
+        "table": {"__rl": true, "mode": "list", "value": "wpp_handoff_log"},
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "contact_number": "={{ $('Decidir resposta').item.json.contact_number }}",
+            "action": "pause",
+            "triggered_by": "bot_flow_complete",
+            "ttl_seconds": 86400
+          },
+          "matchingColumns": [],
+          "schema": [
+            {"id": "contact_number", "displayName": "contact_number", "type": "string"},
+            {"id": "action", "displayName": "action", "type": "string"},
+            {"id": "triggered_by", "displayName": "triggered_by", "type": "string"},
+            {"id": "ttl_seconds", "displayName": "ttl_seconds", "type": "number"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000011",
+      "name": "Postgres: log handoff (bot)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [2000, 500],
+      "credentials": {
+        "postgres": {
+          "id": "ED6cdHtL5HTFU4o8",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Quando chamado pelo receiver": {
+      "main": [[{"node": "Redis: ler estado", "type": "main", "index": 0}]]
+    },
+    "Redis: ler estado": {
+      "main": [[{"node": "Decidir resposta", "type": "main", "index": 0}]]
+    },
+    "Decidir resposta": {
+      "main": [[{"node": "Enviar mensagem (chama wpp-sender)", "type": "main", "index": 0}]]
+    },
+    "Enviar mensagem (chama wpp-sender)": {
+      "main": [[{"node": "Tem novo estado?", "type": "main", "index": 0}]]
+    },
+    "Tem novo estado?": {
+      "main": [
+        [{"node": "Redis: salvar estado", "type": "main", "index": 0}],
+        [{"node": "Redis: limpar estado", "type": "main", "index": 0}]
+      ]
+    },
+    "Redis: limpar estado": {
+      "main": [[{"node": "Deve pausar bot?", "type": "main", "index": 0}]]
+    },
+    "Deve pausar bot?": {
+      "main": [
+        [{"node": "Redis: pausar bot 24h", "type": "main", "index": 0}],
+        []
+      ]
+    },
+    "Redis: pausar bot 24h": {
+      "main": [[{"node": "Postgres: log handoff (bot)", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

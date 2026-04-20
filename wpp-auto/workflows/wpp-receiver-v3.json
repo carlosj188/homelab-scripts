@@ -1,0 +1,527 @@
+{
+  "name": "wpp-receiver-v3",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wpp-evolution-receive-v3",
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000001",
+      "name": "Webhook Evolution",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 400],
+      "webhookId": "wpp-evolution-receive-v3"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.body.event }}",
+              "rightValue": "messages.upsert",
+              "operator": {"type": "string", "operation": "equals"}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000002",
+      "name": "É messages.upsert?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [420, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "n1", "name": "message_id", "value": "={{ $json.body.data.key.id }}", "type": "string"},
+            {"id": "n2", "name": "fromMe", "value": "={{ $json.body.data.key.fromMe }}", "type": "boolean"},
+            {"id": "n3", "name": "remoteJid", "value": "={{ $json.body.data.key.remoteJid }}", "type": "string"},
+            {"id": "n4", "name": "contact_number", "value": "={{ $json.body.data.key.remoteJid.split(\"@\")[0] }}", "type": "string"},
+            {"id": "n5", "name": "content", "value": "={{ $json.body.data.message?.conversation || $json.body.data.message?.extendedTextMessage?.text || '' }}", "type": "string"},
+            {"id": "n6", "name": "instance", "value": "={{ $json.body.instance }}", "type": "string"},
+            {"id": "n7", "name": "raw_payload", "value": "={{ $json.body }}", "type": "object"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000003",
+      "name": "Normalizar campos",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [640, 400]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "=bot:ignore:{{ $json.contact_number }}",
+        "keyType": "string",
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000030",
+      "name": "Redis: está na ignore list?",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [860, 400],
+      "credentials": {"redis": {"id": "YEun9v2RmIsI97HG", "name": "Redis account"}}
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+          "conditions": [
+            {
+              "id": "cignore",
+              "leftValue": "={{ $json.propertyName }}",
+              "rightValue": "1",
+              "operator": {"type": "string", "operation": "equals"}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000031",
+      "name": "Está na ignore list?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1080, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $('Normalizar campos').item.json.fromMe }}",
+              "rightValue": true,
+              "operator": {"type": "boolean", "operation": "true", "singleValue": true}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000004",
+      "name": "fromMe = true?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1300, 540]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "=bot:sent_msg:{{ $('Normalizar campos').item.json.message_id }}",
+        "keyType": "string",
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000005",
+      "name": "Redis: foi o bot?",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1520, 380],
+      "credentials": {"redis": {"id": "YEun9v2RmIsI97HG", "name": "Redis account"}}
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+          "conditions": [
+            {
+              "id": "c3",
+              "leftValue": "={{ $json.propertyName }}",
+              "rightValue": "1",
+              "operator": {"type": "string", "operation": "equals"}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000006",
+      "name": "Eco do bot?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1740, 380]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=bot:paused:{{ $('Normalizar campos').item.json.contact_number }}",
+        "value": "1",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 86400
+      },
+      "id": "c0000001-0000-0000-0000-000000000007",
+      "name": "Redis: pausar bot 24h",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1960, 460],
+      "credentials": {"redis": {"id": "YEun9v2RmIsI97HG", "name": "Redis account"}}
+    },
+    {
+      "parameters": {
+        "schema": {"__rl": true, "mode": "list", "value": "public"},
+        "table": {"__rl": true, "mode": "list", "value": "wpp_handoff_log"},
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "contact_number": "={{ $('Normalizar campos').item.json.contact_number }}",
+            "action": "pause",
+            "triggered_by": "human_message",
+            "ttl_seconds": 86400
+          },
+          "matchingColumns": [],
+          "schema": [
+            {"id": "contact_number", "displayName": "contact_number", "type": "string"},
+            {"id": "action", "displayName": "action", "type": "string"},
+            {"id": "triggered_by", "displayName": "triggered_by", "type": "string"},
+            {"id": "ttl_seconds", "displayName": "ttl_seconds", "type": "number"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000008",
+      "name": "Postgres: log handoff",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [2180, 460],
+      "credentials": {"postgres": {"id": "ED6cdHtL5HTFU4o8", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "schema": {"__rl": true, "mode": "list", "value": "public"},
+        "table": {"__rl": true, "mode": "list", "value": "wpp_messages"},
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "message_id": "={{ $('Normalizar campos').item.json.message_id }}",
+            "contact_number": "={{ $('Normalizar campos').item.json.contact_number }}",
+            "direction": "out_human",
+            "content": "={{ $('Normalizar campos').item.json.content }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {"id": "message_id", "displayName": "message_id", "type": "string"},
+            {"id": "contact_number", "displayName": "contact_number", "type": "string"},
+            {"id": "direction", "displayName": "direction", "type": "string"},
+            {"id": "content", "displayName": "content", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000009",
+      "name": "Postgres: log msg humana",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [2400, 460],
+      "credentials": {"postgres": {"id": "ED6cdHtL5HTFU4o8", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "=bot:paused:{{ $('Normalizar campos').item.json.contact_number }}",
+        "keyType": "string",
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000010",
+      "name": "Redis: bot pausado?",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1520, 700],
+      "credentials": {"redis": {"id": "YEun9v2RmIsI97HG", "name": "Redis account"}}
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+          "conditions": [
+            {
+              "id": "c4",
+              "leftValue": "={{ $json.propertyName }}",
+              "rightValue": "1",
+              "operator": {"type": "string", "operation": "equals"}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000011",
+      "name": "Está pausado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1740, 700]
+    },
+    {
+      "parameters": {
+        "schema": {"__rl": true, "mode": "list", "value": "public"},
+        "table": {"__rl": true, "mode": "list", "value": "wpp_messages"},
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "message_id": "={{ $('Normalizar campos').item.json.message_id }}",
+            "contact_number": "={{ $('Normalizar campos').item.json.contact_number }}",
+            "direction": "in",
+            "content": "={{ $('Normalizar campos').item.json.content }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {"id": "message_id", "displayName": "message_id", "type": "string"},
+            {"id": "contact_number", "displayName": "contact_number", "type": "string"},
+            {"id": "direction", "displayName": "direction", "type": "string"},
+            {"id": "content", "displayName": "content", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000012",
+      "name": "Postgres: log msg recebida",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1960, 820],
+      "credentials": {"postgres": {"id": "ED6cdHtL5HTFU4o8", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const contactNumber = $('Normalizar campos').item.json.contact_number;\nconst messageId = $('Normalizar campos').item.json.message_id;\nconst content = $('Normalizar campos').item.json.content;\nconst instance = $('Normalizar campos').item.json.instance;\n\nreturn [{\n  json: {\n    contact_number: contactNumber,\n    message_id: messageId,\n    content: content,\n    instance: instance,\n    buffer_key: `buffer:msgs:${contactNumber}`,\n    last_key: `buffer:last:${contactNumber}`\n  }\n}];\n"
+      },
+      "id": "c0000001-0000-0000-0000-000000000013",
+      "name": "Preparar buffer keys",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2180, 820]
+    },
+    {
+      "parameters": {
+        "operation": "push",
+        "list": "={{ $json.buffer_key }}",
+        "messageData": "={{ $json.content }}",
+        "tail": true,
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000014",
+      "name": "Redis: append buffer",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [2400, 820],
+      "credentials": {"redis": {"id": "YEun9v2RmIsI97HG", "name": "Redis account"}}
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=buffer:last:{{ $('Preparar buffer keys').item.json.contact_number }}",
+        "value": "={{ $('Preparar buffer keys').item.json.message_id }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 30
+      },
+      "id": "c0000001-0000-0000-0000-000000000015",
+      "name": "Redis: marcar ultimo",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [2620, 820],
+      "credentials": {"redis": {"id": "YEun9v2RmIsI97HG", "name": "Redis account"}}
+    },
+    {
+      "parameters": {"amount": 8, "unit": "seconds"},
+      "id": "c0000001-0000-0000-0000-000000000016",
+      "name": "Wait 8s (debounce)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [2840, 820],
+      "webhookId": "debounce-wait-v3"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "=buffer:last:{{ $('Preparar buffer keys').item.json.contact_number }}",
+        "keyType": "string",
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000017",
+      "name": "Redis: ler ultimo",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [3060, 820],
+      "credentials": {"redis": {"id": "YEun9v2RmIsI97HG", "name": "Redis account"}}
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+          "conditions": [
+            {
+              "id": "c5",
+              "leftValue": "={{ $json.propertyName }}",
+              "rightValue": "={{ $('Preparar buffer keys').item.json.message_id }}",
+              "operator": {"type": "string", "operation": "equals"}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c0000001-0000-0000-0000-000000000018",
+      "name": "Sou a ultima msg?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3280, 820]
+    },
+    {
+      "parameters": {
+        "operation": "keys",
+        "keyPattern": "=buffer:msgs:{{ $('Preparar buffer keys').item.json.contact_number }}",
+        "options": {"type": "list", "getValues": true}
+      },
+      "id": "c0000001-0000-0000-0000-000000000019",
+      "name": "Redis: ler buffer",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [3500, 760],
+      "credentials": {"redis": {"id": "YEun9v2RmIsI97HG", "name": "Redis account"}}
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "=buffer:msgs:{{ $('Preparar buffer keys').item.json.contact_number }}",
+        "keyType": "string"
+      },
+      "id": "c0000001-0000-0000-0000-000000000020",
+      "name": "Redis: limpar buffer",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [3720, 760],
+      "credentials": {"redis": {"id": "YEun9v2RmIsI97HG", "name": "Redis account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const contactNumber = $('Preparar buffer keys').item.json.contact_number;\nconst instance = $('Preparar buffer keys').item.json.instance;\nconst messageId = $('Preparar buffer keys').item.json.message_id;\n\nconst previousOutput = $input.first().json;\nlet messages = [];\n\nfor (const key in previousOutput) {\n  if (Array.isArray(previousOutput[key])) {\n    messages = previousOutput[key];\n    break;\n  }\n}\n\nif (messages.length === 0) {\n  const fallback = $('Preparar buffer keys').item.json.content;\n  if (fallback) messages = [fallback];\n}\n\nlet digitFound = null;\nfor (const msg of messages) {\n  const msgStr = (msg || '').toString();\n  const match = msgStr.match(/(?:^|\\s|[^\\w])([0-3])(?:\\s|$|[^\\w])/);\n  if (match) {\n    digitFound = match[1];\n    break;\n  }\n  const trimmed = msgStr.trim().replace(/[.)\\s]/g, '');\n  if (/^[0-3]$/.test(trimmed)) {\n    digitFound = trimmed;\n    break;\n  }\n}\n\nconst finalContent = digitFound !== null ? digitFound : messages.join('\\n');\n\nreturn [{\n  json: {\n    contact_number: contactNumber,\n    content: finalContent,\n    message_id: messageId,\n    instance: instance,\n    debug_original_messages: messages,\n    debug_digit_found: digitFound\n  }\n}];\n"
+      },
+      "id": "c0000001-0000-0000-0000-000000000021",
+      "name": "Filtrar input inteligente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3940, 760]
+    },
+    {
+      "parameters": {
+        "workflowId": {"__rl": true, "value": "1UjlULsbchQpEl5U", "mode": "list", "cachedResultName": "wpp-bot-engine"},
+        "options": {"waitForSubWorkflow": true}
+      },
+      "id": "c0000001-0000-0000-0000-000000000022",
+      "name": "Chamar bot engine",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [4160, 760]
+    },
+    {
+      "parameters": {
+        "content": "## wpp-receiver-v3 (com ignore list)\n\n**Novidade v3:** checagem de ignore list logo após validar `messages.upsert`.\n\n**Ignore list:** chaves Redis individuais `bot:ignore:<numero>` com valor `1`.\n\n**Uso:**\n```\n# Adicionar à lista\nSET bot:ignore:556684587764 1\n\n# Remover\nDEL bot:ignore:556684587764\n\n# Listar\nKEYS bot:ignore:*\n```\n\n**Comportamento:** se número está na lista, workflow aborta SILENCIOSAMENTE — não loga mensagem, não pausa, não faz nada. O bot não sabe que o contato existe.",
+        "height": 340,
+        "width": 420,
+        "color": 5
+      },
+      "id": "c0000001-0000-0000-0000-000000000099",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [200, 40]
+    }
+  ],
+  "connections": {
+    "Webhook Evolution": {
+      "main": [[{"node": "É messages.upsert?", "type": "main", "index": 0}]]
+    },
+    "É messages.upsert?": {
+      "main": [
+        [{"node": "Normalizar campos", "type": "main", "index": 0}],
+        []
+      ]
+    },
+    "Normalizar campos": {
+      "main": [[{"node": "Redis: está na ignore list?", "type": "main", "index": 0}]]
+    },
+    "Redis: está na ignore list?": {
+      "main": [[{"node": "Está na ignore list?", "type": "main", "index": 0}]]
+    },
+    "Está na ignore list?": {
+      "main": [
+        [],
+        [{"node": "fromMe = true?", "type": "main", "index": 0}]
+      ]
+    },
+    "fromMe = true?": {
+      "main": [
+        [{"node": "Redis: foi o bot?", "type": "main", "index": 0}],
+        [{"node": "Redis: bot pausado?", "type": "main", "index": 0}]
+      ]
+    },
+    "Redis: foi o bot?": {
+      "main": [[{"node": "Eco do bot?", "type": "main", "index": 0}]]
+    },
+    "Eco do bot?": {
+      "main": [
+        [],
+        [{"node": "Redis: pausar bot 24h", "type": "main", "index": 0}]
+      ]
+    },
+    "Redis: pausar bot 24h": {
+      "main": [[{"node": "Postgres: log handoff", "type": "main", "index": 0}]]
+    },
+    "Postgres: log handoff": {
+      "main": [[{"node": "Postgres: log msg humana", "type": "main", "index": 0}]]
+    },
+    "Redis: bot pausado?": {
+      "main": [[{"node": "Está pausado?", "type": "main", "index": 0}]]
+    },
+    "Está pausado?": {
+      "main": [
+        [],
+        [{"node": "Postgres: log msg recebida", "type": "main", "index": 0}]
+      ]
+    },
+    "Postgres: log msg recebida": {
+      "main": [[{"node": "Preparar buffer keys", "type": "main", "index": 0}]]
+    },
+    "Preparar buffer keys": {
+      "main": [[{"node": "Redis: append buffer", "type": "main", "index": 0}]]
+    },
+    "Redis: append buffer": {
+      "main": [[{"node": "Redis: marcar ultimo", "type": "main", "index": 0}]]
+    },
+    "Redis: marcar ultimo": {
+      "main": [[{"node": "Wait 8s (debounce)", "type": "main", "index": 0}]]
+    },
+    "Wait 8s (debounce)": {
+      "main": [[{"node": "Redis: ler ultimo", "type": "main", "index": 0}]]
+    },
+    "Redis: ler ultimo": {
+      "main": [[{"node": "Sou a ultima msg?", "type": "main", "index": 0}]]
+    },
+    "Sou a ultima msg?": {
+      "main": [
+        [{"node": "Redis: ler buffer", "type": "main", "index": 0}],
+        []
+      ]
+    },
+    "Redis: ler buffer": {
+      "main": [[{"node": "Redis: limpar buffer", "type": "main", "index": 0}]]
+    },
+    "Redis: limpar buffer": {
+      "main": [[{"node": "Filtrar input inteligente", "type": "main", "index": 0}]]
+    },
+    "Filtrar input inteligente": {
+      "main": [[{"node": "Chamar bot engine", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {"executionOrder": "v1"}
+}

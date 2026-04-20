@@ -1,0 +1,149 @@
+{
+  "name": "wpp-sender",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"numero\": \"5565999999999\",\n  \"mensagem\": \"Teste de envio\",\n  \"instancia\": \"powerup-main\"\n}"
+      },
+      "id": "a1b2c3d4-0001-0000-0000-000000000001",
+      "name": "Quando chamado por outro workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 400]
+    },
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "operation": "send-text",
+        "instanceName": "={{ $json.instancia }}",
+        "remoteJid": "={{ $json.numero }}",
+        "messageText": "={{ $json.mensagem }}",
+        "options_message": {}
+      },
+      "id": "a1b2c3d4-0001-0000-0000-000000000002",
+      "name": "Enviar via Evolution",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [480, 400],
+      "credentials": {
+        "evolutionApi": {
+          "id": "2VodQgJvFM7OlLpa",
+          "name": "Evolution account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "aa1",
+              "name": "message_id",
+              "value": "={{ $json.key.id }}",
+              "type": "string"
+            },
+            {
+              "id": "aa2",
+              "name": "numero",
+              "value": "={{ $('Quando chamado por outro workflow').item.json.numero }}",
+              "type": "string"
+            },
+            {
+              "id": "aa3",
+              "name": "mensagem",
+              "value": "={{ $('Quando chamado por outro workflow').item.json.mensagem }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0000-0000-000000000003",
+      "name": "Extrair campos",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [720, 400]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=bot:sent_msg:{{ $json.message_id }}",
+        "value": "1",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 300
+      },
+      "id": "a1b2c3d4-0001-0000-0000-000000000004",
+      "name": "Redis: marcar como enviado pelo bot",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [960, 400],
+      "credentials": {
+        "redis": {
+          "id": "YEun9v2RmIsI97HG",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "wpp_messages"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "message_id": "={{ $json.message_id }}",
+            "contact_number": "={{ $json.numero }}",
+            "direction": "out_bot",
+            "content": "={{ $json.mensagem }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {"id": "message_id", "displayName": "message_id", "type": "string"},
+            {"id": "contact_number", "displayName": "contact_number", "type": "string"},
+            {"id": "direction", "displayName": "direction", "type": "string"},
+            {"id": "content", "displayName": "content", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0000-0000-000000000005",
+      "name": "Postgres: log mensagem enviada",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1200, 400],
+      "credentials": {
+        "postgres": {
+          "id": "ED6cdHtL5HTFU4o8",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Quando chamado por outro workflow": {
+      "main": [[{"node": "Enviar via Evolution", "type": "main", "index": 0}]]
+    },
+    "Enviar via Evolution": {
+      "main": [[{"node": "Extrair campos", "type": "main", "index": 0}]]
+    },
+    "Extrair campos": {
+      "main": [[{"node": "Redis: marcar como enviado pelo bot", "type": "main", "index": 0}]]
+    },
+    "Redis: marcar como enviado pelo bot": {
+      "main": [[{"node": "Postgres: log mensagem enviada", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
